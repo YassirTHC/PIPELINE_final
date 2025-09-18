@@ -34,6 +34,7 @@ class ProviderConfig:
     enabled: bool = True
     max_results: int = 6
     timeout_s: float = 8.0
+    retry_count: int = 2
 
 
 @dataclass(slots=True)
