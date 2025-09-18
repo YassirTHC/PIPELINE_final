@@ -1121,7 +1121,21 @@ def _rank_candidate(self, segment_text: str, candidate, selection_cfg, segment_d
                 return input_path
 
             if _pipeline_core_fetcher_enabled():
-                self._insert_brolls_pipeline_core(segments, broll_keywords, subtitles=subtitles, input_path=input_path)
+                fetcher_cfg = getattr(self._pipeline_config, "fetcher", None)
+                providers = getattr(fetcher_cfg, "providers", None)
+                has_enabled_provider = False
+                if providers:
+                    try:
+                        has_enabled_provider = any(getattr(provider, "enabled", True) for provider in providers)
+                    except TypeError:
+                        providers = list(providers) if providers is not None else []
+                        has_enabled_provider = any(getattr(provider, "enabled", True) for provider in providers)
+                if has_enabled_provider:
+                    self._insert_brolls_pipeline_core(segments, broll_keywords, subtitles=subtitles, input_path=input_path)
+                else:
+                    logger.warning(
+                        "[BROLL] pipeline_core fetcher enabled but no providers are active; using legacy flow"
+                    )
 
             
             # Construire la config du pipeline (fetch + embeddings activés, pas de limites)
