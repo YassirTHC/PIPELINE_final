@@ -108,29 +108,41 @@ class FetcherOrchestrator:
 
         def _dispatch() -> List[RemoteAssetCandidate]:
             if name == "pexels":
-                return self._fetch_from_pexels(query, limit)
+                return self._fetch_from_pexels(query, limit, timeout_s=timeout)
             if name == "pixabay":
-                return self._fetch_from_pixabay(query, limit)
+                return self._fetch_from_pixabay(query, limit, timeout_s=timeout)
             return []
 
         for attempt in range(attempts):
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as gate:
-                future = gate.submit(_dispatch)
-                try:
-                    return future.result(timeout=timeout)
-                except concurrent.futures.TimeoutError:
-                    continue
-                except Exception:
-                    if attempt == attempts - 1:
-                        return []
+            gate = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            future = gate.submit(_dispatch)
+            try:
+                result = future.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                gate.shutdown(wait=False, cancel_futures=True)
+                continue
+            except Exception:
+                gate.shutdown(wait=False, cancel_futures=True)
+                if attempt == attempts - 1:
+                    return []
+                continue
+            else:
+                gate.shutdown(wait=True, cancel_futures=False)
+                return result
         return []
 
-    def _fetch_from_pexels(self, query: str, limit: int) -> List[RemoteAssetCandidate]:
+    def _fetch_from_pexels(
+        self, query: str, limit: int, *, timeout_s: Optional[float] = None
+    ) -> List[RemoteAssetCandidate]:
         key = getattr(__import__("config", fromlist=["Config"]).Config, "PEXELS_API_KEY", None)
         if not key:
             return []
         try:
-            videos = pexels_search_videos(key, query, per_page=limit * 2)
+            kwargs = {"per_page": limit * 2}
+            if timeout_s is not None:
+                kwargs["timeout"] = timeout_s
+            videos = pexels_search_videos(key, query, **kwargs)
         except Exception:
             return []
         candidates: List[RemoteAssetCandidate] = []
@@ -156,12 +168,17 @@ class FetcherOrchestrator:
             )
         return candidates
 
-    def _fetch_from_pixabay(self, query: str, limit: int) -> List[RemoteAssetCandidate]:
+    def _fetch_from_pixabay(
+        self, query: str, limit: int, *, timeout_s: Optional[float] = None
+    ) -> List[RemoteAssetCandidate]:
         key = getattr(__import__("config", fromlist=["Config"]).Config, "PIXABAY_API_KEY", None)
         if not key:
             return []
         try:
-            videos = pixabay_search_videos(key, query, per_page=limit * 2)
+            kwargs = {"per_page": limit * 2}
+            if timeout_s is not None:
+                kwargs["timeout"] = timeout_s
+            videos = pixabay_search_videos(key, query, **kwargs)
         except Exception:
             return []
         candidates: List[RemoteAssetCandidate] = []
